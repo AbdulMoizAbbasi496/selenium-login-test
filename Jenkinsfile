@@ -34,16 +34,18 @@ pipeline {
 
                 sh "git config --global --add safe.directory ${env.WORKSPACE}"
 
+                // Get committer email safely
                 def committer = sh(
                     script: "git log -1 --pretty=format:'%ae' || echo ''",
                     returnStdout: true
                 ).trim()
 
-                // FIX invalid email edge cases
+                // fallback if invalid email
                 if (!committer || !committer.contains("@")) {
                     committer = "moiz45573@gmail.com"
                 }
 
+                // Parse test results safely
                 def raw = sh(
                     script: "grep -h \"<testcase\" target/surefire-reports/*.xml || true",
                     returnStdout: true
@@ -75,14 +77,21 @@ pipeline {
                     }
                 }
 
-                def status = currentBuild.result ?: 'SUCCESS'
+                // ✅ FIX: correct build status logic
+                if (failed == 0) {
+                    currentBuild.result = 'SUCCESS'
+                } else {
+                    currentBuild.result = 'FAILURE'
+                }
+
+                def status = currentBuild.result
 
                 def emailBody = """
 Build #${env.BUILD_NUMBER} — ${status}
 
 Committer: ${committer}
 
-Total: ${total}
+Total Tests: ${total}
 Passed: ${passed}
 Failed: ${failed}
 Skipped: ${skipped}
@@ -90,14 +99,19 @@ Skipped: ${skipped}
 Details:
 ${details}
 
-URL: ${env.BUILD_URL}
+Build URL: ${env.BUILD_URL}
 """
 
-                emailext(
-                    to: "${committer}, moiz45573@gmail.com",
-                    subject: "Build #${env.BUILD_NUMBER} - ${status}",
-                    body: emailBody
-                )
+                // ✅ FIX: prevent email crash from failing build
+                try {
+                    emailext(
+                        to: "${committer}, moiz45573@gmail.com",
+                        subject: "Build #${env.BUILD_NUMBER} - ${status}",
+                        body: emailBody
+                    )
+                } catch (Exception e) {
+                    echo "Email failed but build continues: ${e}"
+                }
             }
         }
     }
