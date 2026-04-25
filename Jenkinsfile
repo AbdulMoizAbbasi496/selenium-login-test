@@ -9,7 +9,7 @@ pipeline {
     stages {
         stage('Clone Repository') {
             steps {
-                git branch: 'main', url: 'https://github.com/YOUR_GITHUB_USERNAME/selenium-login-test.git'
+                git branch: 'main', url: 'https://github.com/AbdulMoizAbbasi496/selenium-login-test.git'
             }
         }
 
