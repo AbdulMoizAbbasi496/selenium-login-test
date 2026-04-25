@@ -44,7 +44,7 @@ public class LoginTest {
 
         System.out.println("TEST: Waiting for email field...");
         WebElement emailField = wait.until(
-            ExpectedConditions.visibilityOfElementLocated(By.name("email"))
+            ExpectedConditions.visibilityOfElementLocated(By.id("email"))
         );
 
         System.out.println("TEST: Entering wrong credentials...");
