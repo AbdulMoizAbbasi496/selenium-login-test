@@ -9,19 +9,20 @@ pipeline {
     stages {
         stage('Clone Repository') {
             steps {
-                git branch: 'main', url: 'https://github.com/AbdulMoizAbbasi496/selenium-login-test.git'
+                git branch: 'main', 
+                    url: 'https://github.com/AbdulMoizAbbasi496/selenium-login-test.git'
             }
         }
 
         stage('Test') {
             steps {
-                sh 'mvn test -B || true'
+                sh 'mvn test'
             }
         }
 
         stage('Publish Test Results') {
             steps {
-                junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                junit '**/target/surefire-reports/*.xml'
             }
         }
     }
@@ -30,17 +31,14 @@ pipeline {
         always {
             script {
                 sh "git config --global --add safe.directory ${env.WORKSPACE}"
-
+                
                 def committer = sh(
                     script: "git log -1 --pretty=format:'%ae'",
                     returnStdout: true
-                ).trim().replaceAll("@+", "@")
+                ).trim()
 
-                echo "Committer email: ${committer}"
-
-                def xmlFile = "target/surefire-reports/TEST-com.lab10.LoginTest.xml"
-                def xmlExists = sh(
-                    script: "[ -f ${xmlFile} ] && echo yes || echo no",
+                def raw = sh(
+                    script: "grep -h \"<testcase\" target/surefire-reports/*.xml || true",
                     returnStdout: true
                 ).trim()
 
@@ -50,55 +48,43 @@ pipeline {
                 int skipped = 0
                 def details = ""
 
-                if (xmlExists == "yes") {
-                    def raw = sh(
-                        script: "grep -h '<testcase' ${xmlFile} || echo ''",
-                        returnStdout: true
-                    ).trim()
+                if (raw) {
+                    raw.split('\n').each { line ->
+                        total++
+                        def matcher = (line =~ /name="([^"]+)"/)
+                        def name = matcher ? matcher[0][1] : "Unknown"
 
-                    if (raw) {
-                        raw.split('\n').each { line ->
-                            total++
-                            def nameMatch = (line =~ /name="([^"]+)"/)
-                            def name = nameMatch ? nameMatch[0][1] : "Unknown"
-
-                            if (line.contains("<failure")) {
-                                failed++
-                                details += "${name} — FAILED\n"
-                            } else if (line.contains("<skipped")) {
-                                skipped++
-                                details += "${name} — SKIPPED\n"
-                            } else {
-                                passed++
-                                details += "${name} — PASSED\n"
-                            }
+                        if (line.contains("<failure")) {
+                            failed++
+                            details += "${name} — FAILED\n"
+                        } else if (line.contains("<skipped") || line.contains("</skipped>")) {
+                            skipped++
+                            details += "${name} — SKIPPED\n"
+                        } else {
+                            passed++
+                            details += "${name} — PASSED\n"
                         }
                     }
-                } else {
-                    details = "No test report found.\n"
                 }
 
-                def status = (failed > 0) ? "FAILURE" : "SUCCESS"
+                def emailBody = """
+Test Summary (Build #${env.BUILD_NUMBER})
 
-                emailext(
-                    to: "${committer}, qasimalik@gmail.com",
-                    subject: "Build #${env.BUILD_NUMBER} — ${status} | selenium-login-test",
-                    body: """
-Build #${env.BUILD_NUMBER} — ${status}
-Committer: ${committer}
+Total Tests:   ${total}
+Passed:        ${passed}
+Failed:        ${failed}
+Skipped:       ${skipped}
 
-TEST SUMMARY
-━━━━━━━━━━━━
-Total:   ${total}
-Passed:  ${passed}
-Failed:  ${failed}
-Skipped: ${skipped}
-
-Details:
-${details}
+Detailed Results:
+${details ?: 'No test results found'}
 
 Build URL: ${env.BUILD_URL}
 """
+
+                emailext(
+                    to: committer,
+                    subject: "Build #${env.BUILD_NUMBER} Test Results",
+                    body: emailBody
                 )
             }
         }
