@@ -21,7 +21,8 @@ pipeline {
 
         stage('Publish Test Results') {
             steps {
-                junit '**/target/surefire-reports/*.xml'
+                // always() here so it runs even if tests fail
+                junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
             }
         }
     }
@@ -36,8 +37,13 @@ pipeline {
                     returnStdout: true
                 ).trim()
 
-                def raw = sh(
-                    script: "grep -h \"<testcase\" target/surefire-reports/*.xml || echo ''",
+                // Remove any accidental double @
+                committer = committer.replaceAll("@+", "@")
+
+                echo "Committer email: ${committer}"
+
+                def xmlExists = sh(
+                    script: "ls target/surefire-reports/*.xml 2>/dev/null | wc -l",
                     returnStdout: true
                 ).trim()
 
@@ -47,33 +53,41 @@ pipeline {
                 int skipped = 0
                 def details = ""
 
-                if (raw) {
-                    raw.split('\n').each { line ->
-                        total++
-                        def name = (line =~ /name="([^"]+)"/)[0][1]
+                if (xmlExists != "0") {
+                    def raw = sh(
+                        script: 'grep -h "<testcase" target/surefire-reports/*.xml || echo ""',
+                        returnStdout: true
+                    ).trim()
 
-                        if (line.contains("<failure")) {
-                            failed++
-                            details += "${name} — FAILED\n"
-                        } else if (line.contains("<skipped") || line.contains("</skipped>")) {
-                            skipped++
-                            details += "${name} — SKIPPED\n"
-                        } else {
-                            passed++
-                            details += "${name} — PASSED\n"
+                    if (raw) {
+                        raw.split('\n').each { line ->
+                            total++
+                            def nameMatch = (line =~ /name="([^"]+)"/)
+                            def name = nameMatch ? nameMatch[0][1] : "Unknown"
+
+                            if (line.contains("<failure")) {
+                                failed++
+                                details += "${name} — FAILED\n"
+                            } else if (line.contains("<skipped") || line.contains("</skipped>")) {
+                                skipped++
+                                details += "${name} — SKIPPED\n"
+                            } else {
+                                passed++
+                                details += "${name} — PASSED\n"
+                            }
                         }
                     }
+                } else {
+                    details = "No test reports found.\n"
                 }
 
                 def status = currentBuild.result ?: 'SUCCESS'
 
                 def emailBody = """
 Build #${env.BUILD_NUMBER} — ${status}
-Repository: ${env.GIT_URL ?: 'N/A'}
-Branch: ${env.GIT_BRANCH ?: 'main'}
+
 Committer: ${committer}
 
-━━━━━━━━━━━━━━━━━━━━
 TEST SUMMARY
 ━━━━━━━━━━━━━━━━━━━━
 Total Tests:   ${total}

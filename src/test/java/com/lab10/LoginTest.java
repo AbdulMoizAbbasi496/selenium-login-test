@@ -8,6 +8,8 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.support.ui.WebDriverWait;
+import org.openqa.selenium.support.ui.ExpectedConditions;
 import io.github.bonigarcia.wdm.WebDriverManager;
 import java.time.Duration;
 
@@ -17,19 +19,19 @@ public class LoginTest {
 
     @BeforeEach
     void setUp() {
-        // WebDriverManager auto-downloads correct chromedriver
         WebDriverManager.chromedriver().setup();
 
         ChromeOptions options = new ChromeOptions();
-        options.addArguments("--headless");              // No GUI needed
-        options.addArguments("--no-sandbox");            // Required in Docker/EC2
-        options.addArguments("--disable-dev-shm-usage"); // Required in Docker/EC2
+        options.addArguments("--headless");
+        options.addArguments("--no-sandbox");
+        options.addArguments("--disable-dev-shm-usage");
         options.addArguments("--disable-gpu");
         options.addArguments("--window-size=1920,1080");
         options.addArguments("--remote-allow-origins=*");
 
         driver = new ChromeDriver(options);
-        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(10));
+        // Page load timeout
+        driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(30));
     }
 
     @Test
@@ -37,24 +39,41 @@ public class LoginTest {
         System.out.println("TEST: Navigating to login page...");
         driver.navigate().to("http://103.139.122.250:4000/");
 
-        System.out.println("TEST: Entering wrong credentials...");
-        driver.findElement(By.name("email")).sendKeys("wrong@email.com");
-        driver.findElement(By.name("password")).sendKeys("wrongpassword");
-        driver.findElement(By.id("m_login_signin_submit")).click();
+        // Explicit wait — wait up to 15 seconds for email field to appear
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(15));
 
-        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(5));
-
-        System.out.println("TEST: Checking for error message...");
-        WebElement errorElement = driver.findElement(
-            By.xpath("/html/body/div/div/div[1]/div/div/div/div[2]/form/div[1]")
+        System.out.println("TEST: Waiting for email field...");
+        WebElement emailField = wait.until(
+            ExpectedConditions.visibilityOfElementLocated(By.name("email"))
         );
+
+        System.out.println("TEST: Entering wrong credentials...");
+        emailField.sendKeys("wrong@email.com");
+
+        WebElement passwordField = wait.until(
+            ExpectedConditions.visibilityOfElementLocated(By.name("password"))
+        );
+        passwordField.sendKeys("wrongpassword");
+
+        WebElement loginBtn = wait.until(
+            ExpectedConditions.elementToBeClickable(By.id("m_login_signin_submit"))
+        );
+        loginBtn.click();
+
+        System.out.println("TEST: Waiting for error message...");
+        WebElement errorElement = wait.until(
+            ExpectedConditions.visibilityOfElementLocated(
+                By.xpath("/html/body/div/div/div[1]/div/div/div/div[2]/form/div[1]")
+            )
+        );
+
         String errorText = errorElement.getText();
         System.out.println("Error text found: " + errorText);
 
         assert(errorText.contains("Incorrect email or password")) :
             "Expected error message not found. Actual: " + errorText;
 
-        System.out.println("TEST PASSED: Correct error message shown for wrong credentials.");
+        System.out.println("TEST PASSED: Correct error message shown.");
     }
 
     @Test
@@ -62,14 +81,16 @@ public class LoginTest {
         System.out.println("TEST: Checking if login page loads...");
         driver.navigate().to("http://103.139.122.250:4000/");
 
-        String title = driver.getTitle();
-        System.out.println("Page title: " + title);
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(15));
 
-        // Check that the email field exists (page loaded correctly)
-        WebElement emailField = driver.findElement(By.name("email"));
+        WebElement emailField = wait.until(
+            ExpectedConditions.visibilityOfElementLocated(By.name("email"))
+        );
         assert(emailField.isDisplayed()) : "Email field not visible";
 
-        WebElement passwordField = driver.findElement(By.name("password"));
+        WebElement passwordField = wait.until(
+            ExpectedConditions.visibilityOfElementLocated(By.name("password"))
+        );
         assert(passwordField.isDisplayed()) : "Password field not visible";
 
         System.out.println("TEST PASSED: Login page loaded with all elements.");
