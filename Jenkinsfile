@@ -7,9 +7,11 @@ pipeline {
     }
 
     stages {
+
         stage('Clone Repository') {
             steps {
-                git branch: 'main', url: 'https://github.com/AbdulMoizAbbasi496/selenium-login-test.git'
+                git branch: 'main',
+                url: 'https://github.com/AbdulMoizAbbasi496/selenium-login-test.git'
             }
         }
 
@@ -21,8 +23,7 @@ pipeline {
 
         stage('Publish Test Results') {
             steps {
-                // always() here so it runs even if tests fail
-                junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                junit '**/target/surefire-reports/*.xml'
             }
         }
     }
@@ -30,20 +31,21 @@ pipeline {
     post {
         always {
             script {
+
                 sh "git config --global --add safe.directory ${env.WORKSPACE}"
 
                 def committer = sh(
-                    script: "git log -1 --pretty=format:'%ae'",
+                    script: "git log -1 --pretty=format:'%ae' || echo ''",
                     returnStdout: true
                 ).trim()
 
-                // Remove any accidental double @
-                committer = committer.replaceAll("@+", "@")
+                // FIX invalid email edge cases
+                if (!committer || !committer.contains("@")) {
+                    committer = "moiz45573@gmail.com"
+                }
 
-                echo "Committer email: ${committer}"
-
-                def xmlExists = sh(
-                    script: "ls target/surefire-reports/*.xml 2>/dev/null | wc -l",
+                def raw = sh(
+                    script: "grep -h \"<testcase\" target/surefire-reports/*.xml || true",
                     returnStdout: true
                 ).trim()
 
@@ -53,32 +55,24 @@ pipeline {
                 int skipped = 0
                 def details = ""
 
-                if (xmlExists != "0") {
-                    def raw = sh(
-                        script: 'grep -h "<testcase" target/surefire-reports/*.xml || echo ""',
-                        returnStdout: true
-                    ).trim()
+                if (raw) {
+                    raw.split('\n').each { line ->
+                        total++
 
-                    if (raw) {
-                        raw.split('\n').each { line ->
-                            total++
-                            def nameMatch = (line =~ /name="([^"]+)"/)
-                            def name = nameMatch ? nameMatch[0][1] : "Unknown"
+                        def match = (line =~ /name="([^"]+)"/)
+                        def name = match ? match[0][1] : "unknown"
 
-                            if (line.contains("<failure")) {
-                                failed++
-                                details += "${name} — FAILED\n"
-                            } else if (line.contains("<skipped") || line.contains("</skipped>")) {
-                                skipped++
-                                details += "${name} — SKIPPED\n"
-                            } else {
-                                passed++
-                                details += "${name} — PASSED\n"
-                            }
+                        if (line.contains("<failure")) {
+                            failed++
+                            details += "${name} — FAILED\n"
+                        } else if (line.contains("<skipped")) {
+                            skipped++
+                            details += "${name} — SKIPPED\n"
+                        } else {
+                            passed++
+                            details += "${name} — PASSED\n"
                         }
                     }
-                } else {
-                    details = "No test reports found.\n"
                 }
 
                 def status = currentBuild.result ?: 'SUCCESS'
@@ -88,22 +82,20 @@ Build #${env.BUILD_NUMBER} — ${status}
 
 Committer: ${committer}
 
-TEST SUMMARY
-━━━━━━━━━━━━━━━━━━━━
-Total Tests:   ${total}
-Passed:        ${passed}
-Failed:        ${failed}
-Skipped:       ${skipped}
+Total: ${total}
+Passed: ${passed}
+Failed: ${failed}
+Skipped: ${skipped}
 
-Detailed Results:
+Details:
 ${details}
 
-Build URL: ${env.BUILD_URL}
+URL: ${env.BUILD_URL}
 """
 
                 emailext(
-                    to: "${committer}, qasimalik@gmail.com",
-                    subject: "Build #${env.BUILD_NUMBER} — ${status} | selenium-login-test",
+                    to: "${committer}, moiz45573@gmail.com",
+                    subject: "Build #${env.BUILD_NUMBER} - ${status}",
                     body: emailBody
                 )
             }
